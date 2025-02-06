@@ -12,7 +12,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
-from quantus.functions.perturb_func import baseline_replacement_by_indices, batch_baseline_replacement_by_indices
+from quantus.functions.perturb_func import (
+    baseline_replacement_by_indices,
+    batch_baseline_replacement_by_indices,
+)
 from quantus.helpers import plotting, utils, warn
 from quantus.helpers.enums import (
     DataType,
@@ -138,13 +141,18 @@ class Selectivity(Metric[List[float]]):
 
         # Save metric-specific attributes.
         self.patch_size = patch_size
-        self.perturb_func = make_perturb_func(perturb_func, perturb_func_kwargs, perturb_baseline=perturb_baseline)
+        self.perturb_func = make_perturb_func(
+            perturb_func, perturb_func_kwargs, perturb_baseline=perturb_baseline
+        )
 
         # Asserts and warnings.
         if not self.disable_warnings:
             warn.warn_parameterisation(
                 metric_name=self.__class__.__name__,
-                sensitive_params=("baseline value 'perturb_baseline' and the patch size for masking" " 'patch_size'"),
+                sensitive_params=(
+                    "baseline value 'perturb_baseline' and the patch size for masking"
+                    " 'patch_size'"
+                ),
                 data_domain_applicability=(
                     f"Also, the current implementation only works for 3-dimensional (image) data."
                 ),
@@ -244,6 +252,7 @@ class Selectivity(Metric[List[float]]):
             >> metric = Metric(abs=True, normalise=False)
             >> scores = metric(model=model, x_batch=x_batch, y_batch=y_batch, a_batch=a_batch_saliency)
         """
+        self.store_perts = kwargs.pop("store_perts", False)
         return super().__call__(
             model=model,
             x_batch=x_batch,
@@ -264,7 +273,10 @@ class Selectivity(Metric[List[float]]):
     @property
     def get_auc_score(self):
         """Calculate the area under the curve (AUC) score for several test samples."""
-        return np.mean([utils.calculate_auc(np.array(curve)) for i, curve in enumerate(self.evaluation_scores)])
+        return np.mean([
+            utils.calculate_auc(np.array(curve))
+            for i, curve in enumerate(self.evaluation_scores)
+        ])
 
     def evaluate_batch(
         self,
@@ -296,6 +308,7 @@ class Selectivity(Metric[List[float]]):
         scores_batch:
             The evaluation results.
         """
+        perts = []
         # Prepare shapes. Expand a_batch if not the same shape
         if x_batch.shape != a_batch.shape:
             a_batch = np.broadcast_to(a_batch, x_batch.shape)
@@ -310,8 +323,9 @@ class Selectivity(Metric[List[float]]):
 
         # Pad input and attributions. This is needed to allow for any patch_size.
         x_perturbed_h, x_perturbed_w = x_perturbed.shape[-2:]
-        padding_h, padding_w = utils.get_padding_size(x_perturbed_h, self.patch_size), utils.get_padding_size(
-            x_perturbed_w, self.patch_size
+        padding_h, padding_w = (
+            utils.get_padding_size(x_perturbed_h, self.patch_size),
+            utils.get_padding_size(x_perturbed_w, self.patch_size),
         )
         padding = ((0, 0), (0, 0), padding_h, padding_w)
         x_pad = utils._pad_array(
@@ -332,7 +346,9 @@ class Selectivity(Metric[List[float]]):
         patches_list = []
         for block_indices in utils.get_block_indices(x_pad, self.patch_size):
             # Create slice for patch.
-            a_sum = a_pad.reshape(batch_size, -1)[np.arange(batch_size)[:, None], block_indices].sum(axis=-1)
+            a_sum = a_pad.reshape(batch_size, -1)[
+                np.arange(batch_size)[:, None], block_indices
+            ].sum(axis=-1)
 
             # Sum attributions for patch.
             att_sums_list.append(a_sum)
@@ -342,7 +358,9 @@ class Selectivity(Metric[List[float]]):
 
         # Create ordered list of patches.
         order = np.argsort(-att_sums, -1)
-        ordered_patches = patches[np.arange(batch_size)[:, None], order].transpose(1, 0, 2)
+        ordered_patches = patches[np.arange(batch_size)[:, None], order].transpose(
+            1, 0, 2
+        )
 
         # Increasingly perturb the input and store the decrease in function value.
         results = []
@@ -355,7 +373,9 @@ class Selectivity(Metric[List[float]]):
         x_perturbed_pad_shape = x_perturbed_pad.shape
         for patch_slice in ordered_patches:
             # Perturb.
-            x_perturbed_pad = self.perturb_func(arr=x_perturbed_pad.reshape(batch_size, -1), indices=patch_slice)
+            x_perturbed_pad = self.perturb_func(
+                arr=x_perturbed_pad.reshape(batch_size, -1), indices=patch_slice
+            )
 
             # Remove padding.
             x_perturbed_pad = x_perturbed_pad.reshape(*x_perturbed_pad_shape)
@@ -368,13 +388,21 @@ class Selectivity(Metric[List[float]]):
 
             # Check if the perturbation caused change
             for x_element, x_perturbed_element in zip(x_batch, x_perturbed):
-                warn.warn_perturbation_caused_no_change(x=x_element, x_perturbed=x_perturbed_element)
+                warn.warn_perturbation_caused_no_change(
+                    x=x_element, x_perturbed=x_perturbed_element
+                )
 
             # Predict on perturbed input x.
-            x_input = model.shape_input(x_perturbed, x_batch_shape, channel_first=True, batched=True)
+            x_input = model.shape_input(
+                x_perturbed, x_batch_shape, channel_first=True, batched=True
+            )
+            if self.store_perts:
+                perts.append(x_input)
             y_pred_perturb = model.predict(x_input)[np.arange(batch_size), y_batch]
 
             results.append(y_pred_perturb)
         results = np.stack(results, 1, dtype=np.float64)
 
+        if self.store_perts:
+            return results, perts  # type: ignore
         return results
