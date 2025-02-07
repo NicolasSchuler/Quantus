@@ -147,7 +147,9 @@ class FaithfulnessCorrelation(Metric[List[float]]):
         self.similarity_func = similarity_func
         self.nr_runs = nr_runs
         self.subset_size = subset_size
-        self.perturb_func = make_perturb_func(perturb_func, perturb_func_kwargs, perturb_baseline=perturb_baseline)
+        self.perturb_func = make_perturb_func(
+            perturb_func, perturb_func_kwargs, perturb_baseline=perturb_baseline
+        )
 
         # Asserts and warnings.
         if not self.disable_warnings:
@@ -257,6 +259,7 @@ class FaithfulnessCorrelation(Metric[List[float]]):
             >> metric = Metric(abs=True, normalise=False)
             >> scores = metric(model=model, x_batch=x_batch, y_batch=y_batch, a_batch=a_batch_saliency)
         """
+        self.store_kwargs = kwargs.pop("store_kwargs", False)
         return super().__call__(
             model=model,
             x_batch=x_batch,
@@ -292,7 +295,9 @@ class FaithfulnessCorrelation(Metric[List[float]]):
             returning a custom preprocess batch (custom_preprocess_batch).
         """
         # Asserts.
-        asserts.assert_value_smaller_than_input_size(x=x_batch, value=self.subset_size, value_name="subset_size")
+        asserts.assert_value_smaller_than_input_size(
+            x=x_batch, value=self.subset_size, value_name="subset_size"
+        )
 
     def evaluate_batch(
         self,
@@ -324,6 +329,7 @@ class FaithfulnessCorrelation(Metric[List[float]]):
         scores_batch:
             The evaluation results.
         """
+        perts = []
         # Prepare shapes. Expand a_batch if not the same shape
         if x_batch.shape != a_batch.shape:
             a_batch = np.broadcast_to(a_batch, x_batch.shape)
@@ -334,7 +340,9 @@ class FaithfulnessCorrelation(Metric[List[float]]):
         n_features = a_batch.shape[-1]
 
         # Predict on input.
-        x_input = model.shape_input(x_batch, x_batch.shape, channel_first=True, batched=True)
+        x_input = model.shape_input(
+            x_batch, x_batch.shape, channel_first=True, batched=True
+        )
         y_pred = model.predict(x_input)[np.arange(batch_size), y_batch]
 
         pred_deltas = []
@@ -345,7 +353,10 @@ class FaithfulnessCorrelation(Metric[List[float]]):
         for i_ix in range(self.nr_runs):
             # Randomly mask by subset size.
             a_ix = np.stack(
-                [np.random.choice(n_features, self.subset_size, replace=False) for _ in range(batch_size)],
+                [
+                    np.random.choice(n_features, self.subset_size, replace=False)
+                    for _ in range(batch_size)
+                ],
                 axis=0,
             )
             x_perturbed = self.perturb_func(
@@ -356,10 +367,16 @@ class FaithfulnessCorrelation(Metric[List[float]]):
 
             # Check if the perturbation caused change
             for x_element, x_perturbed_element in zip(x_batch, x_perturbed):
-                warn.warn_perturbation_caused_no_change(x=x_element, x_perturbed=x_perturbed_element)
+                warn.warn_perturbation_caused_no_change(
+                    x=x_element, x_perturbed=x_perturbed_element
+                )
 
             # Predict on perturbed input x.
-            x_input = model.shape_input(x_perturbed, x_batch.shape, channel_first=True, batched=True)
+            x_input = model.shape_input(
+                x_perturbed, x_batch.shape, channel_first=True, batched=True
+            )
+            if self.store_kwargs:
+                perts.append(x_input)
             y_pred_perturb = model.predict(x_input)[np.arange(batch_size), y_batch]
             pred_deltas.append(y_pred - y_pred_perturb)
 
@@ -368,6 +385,11 @@ class FaithfulnessCorrelation(Metric[List[float]]):
         pred_deltas = np.stack(pred_deltas, axis=1)
         att_sums = np.stack(att_sums, axis=1)
 
-        similarity: np.array = self.similarity_func(a=att_sums, b=pred_deltas, batched=True)
+        similarity: np.array = self.similarity_func(
+            a=att_sums, b=pred_deltas, batched=True
+        )
+
+        if self.store_kwargs:
+            return similarity.tolist(), perts  # type: ignore
 
         return similarity.tolist()
