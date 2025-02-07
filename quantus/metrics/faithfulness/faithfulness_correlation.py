@@ -259,7 +259,7 @@ class FaithfulnessCorrelation(Metric[List[float]]):
             >> metric = Metric(abs=True, normalise=False)
             >> scores = metric(model=model, x_batch=x_batch, y_batch=y_batch, a_batch=a_batch_saliency)
         """
-        self.store_kwargs = kwargs.pop("store_kwargs", False)
+        self.store_perts = kwargs.pop("store_perts", False)
         return super().__call__(
             model=model,
             x_batch=x_batch,
@@ -375,7 +375,7 @@ class FaithfulnessCorrelation(Metric[List[float]]):
             x_input = model.shape_input(
                 x_perturbed, x_batch.shape, channel_first=True, batched=True
             )
-            if self.store_kwargs:
+            if self.store_perts:
                 perts.append(x_input)
             y_pred_perturb = model.predict(x_input)[np.arange(batch_size), y_batch]
             pred_deltas.append(y_pred - y_pred_perturb)
@@ -389,7 +389,7 @@ class FaithfulnessCorrelation(Metric[List[float]]):
             a=att_sums, b=pred_deltas, batched=True
         )
 
-        if self.store_kwargs:
+        if self.store_perts:
             return similarity.tolist(), perts  # type: ignore
 
         return similarity.tolist()
