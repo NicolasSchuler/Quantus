@@ -134,7 +134,9 @@ class PixelFlipping(Metric[Union[float, List[float]]]):
         # Save metric-specific attributes.
         self.features_in_step = features_in_step
         self.return_auc_per_sample = return_auc_per_sample
-        self.perturb_func = make_perturb_func(perturb_func, perturb_func_kwargs, perturb_baseline=perturb_baseline)
+        self.perturb_func = make_perturb_func(
+            perturb_func, perturb_func_kwargs, perturb_baseline=perturb_baseline
+        )
 
         # Asserts and warnings.
         if not self.disable_warnings:
@@ -237,6 +239,7 @@ class PixelFlipping(Metric[Union[float, List[float]]]):
             >> metric = Metric(abs=True, normalise=False)
             >> scores = metric(model=model, x_batch=x_batch, y_batch=y_batch, a_batch=a_batch_saliency)
         """
+        self.store_perts = kwargs.pop("store_perts", False)
         return super().__call__(
             model=model,
             x_batch=x_batch,
@@ -282,7 +285,9 @@ class PixelFlipping(Metric[Union[float, List[float]]]):
     @property
     def get_auc_score(self):
         """Calculate the area under the curve (AUC) score for several test samples."""
-        return np.mean([utils.calculate_auc(np.array(curve)) for curve in self.evaluation_scores])
+        return np.mean([
+            utils.calculate_auc(np.array(curve)) for curve in self.evaluation_scores
+        ])
 
     def evaluate_batch(
         self,
@@ -314,6 +319,7 @@ class PixelFlipping(Metric[Union[float, List[float]]]):
         scores_batch:
             The evaluation results.
         """
+        perts = []
         # Prepare shapes. Expand a_batch if not the same shape
         if x_batch.shape != a_batch.shape:
             a_batch = np.broadcast_to(a_batch, x_batch.shape)
@@ -335,7 +341,10 @@ class PixelFlipping(Metric[Union[float, List[float]]]):
             # Perturb input by indices of attributions.
             a_ix = a_indices[
                 :,
-                perturbation_step_index * self.features_in_step : (perturbation_step_index + 1) * self.features_in_step,
+                perturbation_step_index * self.features_in_step : (
+                    perturbation_step_index + 1
+                )
+                * self.features_in_step,
             ]
             x_perturbed = self.perturb_func(
                 arr=x_perturbed.reshape(batch_size, -1),
@@ -345,14 +354,22 @@ class PixelFlipping(Metric[Union[float, List[float]]]):
 
             # Check if the perturbation caused change
             for x_element, x_perturbed_element in zip(x_batch, x_perturbed):
-                warn.warn_perturbation_caused_no_change(x=x_element, x_perturbed=x_perturbed_element)
+                warn.warn_perturbation_caused_no_change(
+                    x=x_element, x_perturbed=x_perturbed_element
+                )
 
             # Predict on perturbed input x.
-            x_input = model.shape_input(x_perturbed, x_batch.shape, channel_first=True, batched=True)
+            x_input = model.shape_input(
+                x_perturbed, x_batch.shape, channel_first=True, batched=True
+            )
+            if self.store_perts:
+                perts.append(x_input)
             y_pred_perturb = model.predict(x_input)[np.arange(batch_size), y_batch]
             preds.append(y_pred_perturb)
 
         if self.return_auc_per_sample:
             return utils.calculate_auc(np.stack(preds, axis=1), batched=True).tolist()
 
+        if self.store_perts:
+            return np.stack(preds, axis=1).tolist(), perts  # type: ignore
         return np.stack(preds, axis=1).tolist()
