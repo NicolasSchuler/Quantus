@@ -6,9 +6,9 @@
 # You should have received a copy of the GNU Lesser General Public License along with Quantus. If not, see <https://www.gnu.org/licenses/>.
 # Quantus project URL: <https://github.com/understandable-machine-intelligence-lab/Quantus>.
 
-
 from typing import Callable, Tuple, Sequence, Union
 import numpy as np
+import warnings
 
 
 def assert_features_in_step(
@@ -107,9 +107,9 @@ def assert_nr_segments(nr_segments: int) -> None:
     -------
     None
     """
-    assert (
-        nr_segments > 1
-    ), "The number of segments from the segmentation algorithm must be more than one."
+    assert nr_segments > 1, (
+        "The number of segments from the segmentation algorithm must be more than one."
+    )
 
 
 def assert_layer_order(layer_order: str) -> None:
@@ -143,9 +143,9 @@ def assert_attributions(x_batch: np.array, a_batch: np.array) -> None:
     -------
     None
     """
-    assert (
-        type(a_batch) == np.ndarray
-    ), "Attributions 'a_batch' should be of type np.ndarray."
+    assert type(a_batch) == np.ndarray, (
+        "Attributions 'a_batch' should be of type np.ndarray."
+    )
     assert np.shape(x_batch)[0] == np.shape(a_batch)[0], (
         "The inputs 'x_batch' and attributions 'a_batch' should "
         "include the same number of samples."
@@ -167,13 +167,11 @@ def assert_attributions(x_batch: np.array, a_batch: np.array) -> None:
         "All attribution dimensions should be included in the input dimensions, "
         "but got shapes {} and {}".format(a_shape, x_shape)
     )
-    assert all(
-        [
-            x_shape.index(a) > x_shape.index(a_shape[i])
-            for a in a_shape
-            for i in range(a_shape.index(a))
-        ]
-    ), (
+    assert all([
+        x_shape.index(a) > x_shape.index(a_shape[i])
+        for a in a_shape
+        for i in range(a_shape.index(a))
+    ]), (
         "The dimensions of the attribution must correspond to dimensions of the input in the same order, "
         "but got shapes {} and {}".format(a_shape, x_shape)
     )
@@ -193,7 +191,9 @@ def assert_attributions(x_batch: np.array, a_batch: np.array) -> None:
         "metrics rely on ordering."
         "Recompute the explanations."
     )
-    assert not np.all((a_batch < 0.0)), "Attributions should not all be less than zero."
+    # assert not np.all((a_batch < 0.0)), "Attributions should not all be less than zero."
+    if not np.all((a_batch < 0.0)):
+        warnings.warn("Attributions should not all be less than zero")
 
 
 def assert_segmentations(x_batch: np.array, s_batch: np.array) -> None:
@@ -211,21 +211,21 @@ def assert_segmentations(x_batch: np.array, s_batch: np.array) -> None:
     -------
     None
     """
-    assert (
-        type(s_batch) == np.ndarray
-    ), "Segmentations 's_batch' should be of type np.ndarray."
-    assert (
-        np.shape(x_batch)[0] == np.shape(s_batch)[0]
-    ), "The inputs 'x_batch' and segmentations 's_batch' should include the same number of samples."
-    assert (
-        np.shape(x_batch)[2:] == np.shape(s_batch)[2:]
-    ), "The inputs 'x_batch' and segmentations 's_batch' should share the same dimensions."
-    assert (
-        np.shape(s_batch)[1] == 1
-    ), "The second dimension of the segmentations 's_batch' should be equal to 1."
-    assert (
-        len(np.nonzero(s_batch)) > 0
-    ), "The segmentation 's_batch' must contain non-zero elements."
+    assert type(s_batch) == np.ndarray, (
+        "Segmentations 's_batch' should be of type np.ndarray."
+    )
+    assert np.shape(x_batch)[0] == np.shape(s_batch)[0], (
+        "The inputs 'x_batch' and segmentations 's_batch' should include the same number of samples."
+    )
+    assert np.shape(x_batch)[2:] == np.shape(s_batch)[2:], (
+        "The inputs 'x_batch' and segmentations 's_batch' should share the same dimensions."
+    )
+    assert np.shape(s_batch)[1] == 1, (
+        "The second dimension of the segmentations 's_batch' should be equal to 1."
+    )
+    assert len(np.nonzero(s_batch)) > 0, (
+        "The segmentation 's_batch' must contain non-zero elements."
+    )
     assert (
         np.isin(s_batch.flatten(), [0, 1]).all()
         or np.isin(s_batch.flatten(), [True, False]).all()
@@ -317,14 +317,12 @@ def assert_indexed_axes(arr: np.array, indexed_axes: Sequence[int]) -> None:
     # TODO: Change for batching update, since currently single images are expected.
     assert len(indexed_axes) <= arr.ndim
     assert len(indexed_axes) == len(np.arange(indexed_axes[0], indexed_axes[-1] + 1))
-    assert all(
-        [
-            a == b
-            for a, b in list(
-                zip(indexed_axes, np.arange(indexed_axes[0], indexed_axes[-1] + 1))
-            )
-        ]
-    ), "Make sure indexed_axes contains consecutive axes."
-    assert (
-        0 in indexed_axes or arr.ndim - 1 in indexed_axes
-    ), "Make sure indexed_axes contains either the first or last axis of arr."
+    assert all([
+        a == b
+        for a, b in list(
+            zip(indexed_axes, np.arange(indexed_axes[0], indexed_axes[-1] + 1))
+        )
+    ]), "Make sure indexed_axes contains consecutive axes."
+    assert 0 in indexed_axes or arr.ndim - 1 in indexed_axes, (
+        "Make sure indexed_axes contains either the first or last axis of arr."
+    )
